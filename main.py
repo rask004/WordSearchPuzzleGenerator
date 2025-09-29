@@ -2,6 +2,7 @@ import argparse
 import sys
 from enum import Enum
 from functools import partial
+from math import floor
 from os import path
 from time import time
 from typing import Any, Callable
@@ -175,11 +176,15 @@ def write_puzzles_to_output(start_nodes:list[LinkedListItemSingleLink], output_f
             x, y, c = entry
             grid[x, y] = c
         with open(output_filename, 'a') as fp:
+            if DEBUG:
+                print("writing grid to file")
             fp.write(str(grid))
             fp.write(';')
 
 
-def recurse_update_linked_list(prev_item:LinkedListItemSingleLink, next_word_ndx:int, wordlist:list[str], candidates_func:Callable, directions_func:Callable, puzzle_writer_func:Callable) -> None:
+def recurse_update_linked_list(prev_item:LinkedListItemSingleLink, next_word_ndx:int, wordlist:list[str], candidates_func:Callable, directions_func:Callable, end_state_callback_func:Callable, new_item_limit:int=-1) -> None:
+    if new_item_limit == 0:
+        return
     next_word = wordlist[next_word_ndx]
     prev_words_data = []
     if prev_item.data != END_NODE:
@@ -188,26 +193,56 @@ def recurse_update_linked_list(prev_item:LinkedListItemSingleLink, next_word_ndx
     while prev_link is not None and prev_link.data != END_NODE:
         prev_words_data.append(prev_link.data)
         prev_link = prev_link.link
+    prev_words_data = tuple(prev_words_data)
     new_items = []
     directions = directions_func(next_word)
-    candidates = candidates_func(next_word, tuple(prev_words_data), directions)
-    items_data = [(pos, d, next_word) for pos, directions in candidates for d in directions]
-    for data in items_data:
-        new_items.append(LinkedListItemSingleLink(data, prev_item))
+    candidates = candidates_func(next_word, prev_words_data, directions)
+    items_data:set[tuple[tuple, Directions, str]] = set([(pos, d, next_word) for pos, directions in candidates for d in directions])
+    next_limit = new_item_limit
+    differential = 0
+    if new_item_limit == 1:
+        new_items.append(LinkedListItemSingleLink(items_data.pop(), prev_item))
+    elif new_item_limit == -1 or new_item_limit >= len(items_data):
+        new_items = [LinkedListItemSingleLink(data, prev_item) for data in items_data]
+        if new_item_limit != -1:
+            next_limit = new_item_limit / len(items_data)
+            if next_limit <= 1:
+                next_limit = 1
+            else:
+                differential = next_limit - floor(next_limit)
+                next_limit = floor(next_limit)
+    else:
+        for _ in range(new_item_limit):
+            data = items_data.pop()
+            new_items.append(LinkedListItemSingleLink(data, prev_item))
+        next_limit = 1
+
     if DEBUG:
         global NODE_COUNT
         global LL_MEMORY_SIZE
         for item in new_items:
             NODE_COUNT += 1
             LL_MEMORY_SIZE += sys.getsizeof(item)
+
     if next_word_ndx + 1 >= len(wordlist):
-        puzzle_writer_func(new_items)
+        end_state_callback_func(new_items)
         for item in new_items:
             item.link = None
         prev_item.link = None
     else:
-        for next_item in new_items:
-            recurse_update_linked_list(next_item, next_word_ndx + 1, wordlist, candidates_func, directions_func, puzzle_writer_func)
+        if not differential:
+            for next_item in new_items:
+                recurse_update_linked_list(next_item, next_word_ndx + 1, wordlist, candidates_func, directions_func, end_state_callback_func, new_item_limit=next_limit)
+        else:
+            tmp_ = 0
+            for next_item in new_items:
+                tmp_ += differential
+                if tmp_ < 1:
+                    recurse_update_linked_list(next_item, next_word_ndx + 1, wordlist, candidates_func, directions_func, end_state_callback_func, new_item_limit=next_limit)
+                else:
+                    recurse_update_linked_list(next_item, next_word_ndx + 1, wordlist, candidates_func, directions_func, end_state_callback_func, new_item_limit=next_limit + 1)
+                    tmp_ -= 1
+
 
 
 def parse_args():
@@ -219,7 +254,6 @@ def parse_args():
     parser.add_argument('-o', '--output_filename', default=None, help="Text File to save the resulting puzzles to.")
     parser.add_argument('--DEBUG', action='store_true', help="Show some simple debugging output to the screen.")
     parser.add_argument('--LOGGING', action='store_true', help="Write verbose info to a logging file. CAUTION -- file could become very big!!")
-    parser.add_argument('--CYTOSCAPE', action='store_true', help="record graph data to a Cytoscape file for later analysis.")
     return parser.parse_args()
 
 
@@ -264,7 +298,7 @@ def main() -> None:
     get_word_candidates = partial(find_word_candidates, validator_funcs=validators, width=WORD_SEARCH_WIDTH, height=WORD_SEARCH_HEIGHT)
     get_valid_directions = partial(find_valid_directions, width=WORD_SEARCH_WIDTH, height=WORD_SEARCH_HEIGHT)
     puzzle_writer_ = partial(write_puzzles_to_output, output_filename=OUTPUT_FILENAME, adapter_func=adapter_, grid_width=WORD_SEARCH_WIDTH, grid_height=WORD_SEARCH_HEIGHT)
-    recurse_create_puzzles = partial(recurse_update_linked_list, wordlist=wlist, candidates_func=get_word_candidates, directions_func=get_valid_directions, puzzle_writer_func=puzzle_writer_)
+    recurse_create_puzzles = partial(recurse_update_linked_list, wordlist=wlist, candidates_func=get_word_candidates, directions_func=get_valid_directions, end_state_callback_func=puzzle_writer_)
 
     if args.DEBUG and args.LOGGING:
         with open(LOGGING_FILE, "a") as fp:
@@ -280,7 +314,7 @@ def main() -> None:
     NODE_COUNT += 1
     global LL_MEMORY_SIZE
     LL_MEMORY_SIZE += sys.getsizeof(end_node)
-    recurse_create_puzzles(end_node, next_word_ndx)
+    recurse_create_puzzles(end_node, next_word_ndx, new_item_limit=NUM_PUZZLES)
 
     if args.DEBUG:
         print(">>> puzzle generation complete.")
