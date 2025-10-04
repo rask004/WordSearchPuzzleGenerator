@@ -4,24 +4,20 @@ import sys
 from enum import Enum
 from functools import partial
 from os import path
+from random import choice
+from string import ascii_lowercase
 from time import time
 from typing import Any, Callable
 
-START_NODE = "START"
+### TODO: figure out why
+
 END_NODE = "END"
-NODE_ATTR_POSITION = "position"
-NODE_ATTR_DIRECTION = "direction"
-NODE_ATTR_DIMENSIONS = "x_y_dimensions"
-NODE_ATTR_WORD = "word"
-KEY_PREV_NODE = 'prev_node'
-KEY_CURRENT_WORD = 'word'
-KEY_HIERARCHY_DATA = 'used_words_data'
 LOGGING_FILE = f"word_search_generation.{time()}.log"
+DEFAULT_OUTPUT_FILE = f"puzzle_output.{time()}.txt"
 
 NODE_COUNT = 0
 LL_MEMORY_SIZE = 0
 DEBUG = False
-
 
 class ProcessManager:
     END_MSG_WRITE = '!!EOF'
@@ -75,7 +71,7 @@ class Grid:
         self._width = width
         self._height = height
         self._placeholder = None
-        self._array = [[None for _ in range(width)] for _ in range(height)]
+        self._array:list[list[Any]] = [[None for _ in range(width)] for _ in range(height)]
 
     def __getitem__(self, key):
         x, y = key
@@ -116,7 +112,12 @@ class Grid:
 
     @placeholder.setter
     def placeholder(self, value) -> None:
+        old_placeholder = self._placeholder
         self._placeholder = str(value)
+        for i in range(self._width):
+            for j in range(self._height):
+                if self._array[j][i] == old_placeholder:
+                    self._array[j][i] = str(value)
 
 
 class LinkedListItemSingleLink:
@@ -130,12 +131,18 @@ class LinkedListItemSingleLink:
 
 
 def get_wordlist(fname:str) -> list[str]:
+    """Given a filename of a text file and assuming it contains a newline separated list of words,
+    return the text contents as a list."""
     with open(fname) as fp:
-        wordlist = sorted([w.strip() for w in fp.readlines()], key=lambda x: len(x), reverse=True)
+        wordlist = [w.strip() for w in fp.readlines()]
+    if wordlist[-1] == '':
+        del wordlist[-1]
     return wordlist
 
 
 def word_data_tuple_to_dict_adapter():
+    """Returns an adapter closure for converting data representing word positions on grids, from
+    a tuple format to a dict format. The closure uses a hashed cache to speed up repeat conversions."""
     func_cache = {}
     def func_(word_data, cache=True):
         hcode = hash(word_data)
@@ -157,6 +164,8 @@ def word_data_tuple_to_dict_adapter():
 
 
 def validator_non_overlapping(candidate_word_data, used_words_data, adapter) -> bool:
+    """Validation function to compare data representing words placed on a grid. Returns True if
+    no words are overlapping or all overlapping words have the same letters at shared grid locations."""
     used_words_data = adapter(used_words_data)
     candidate_word_data = adapter(candidate_word_data, cache=False)
     conflicts = [w for w in candidate_word_data for u in used_words_data if w[0] == u[0] and w[1] == u[1] and w[2] != u[2]]
@@ -164,6 +173,7 @@ def validator_non_overlapping(candidate_word_data, used_words_data, adapter) -> 
 
 
 def word_candidates_gen(word:str, directions:tuple[Directions], width:int, height:int):
+    """Generator function to create valid placements and directions of a given word in a hypothetical grid."""
     word_len = len(word)
     for y in range(height):
         for x in range(width):
@@ -171,9 +181,11 @@ def word_candidates_gen(word:str, directions:tuple[Directions], width:int, heigh
 
 
 def find_word_candidates(new_word:str, used_word_data:tuple, valid_directions:tuple[Directions], validator_funcs:tuple, width:int, height:int) -> list:
+    """High level function to find correct placements of a given word in a hypothetical grid, given
+    other words that are already placed in said grid, and specific directions or orientations the word
+    is allowed to be in."""
     generator = word_candidates_gen(new_word, valid_directions, width, height)
     candidates = []
-
     for item in generator:
         position, directions = item
         for validate in validator_funcs:
@@ -184,11 +196,11 @@ def find_word_candidates(new_word:str, used_word_data:tuple, valid_directions:tu
                     del directions[j]
         if directions:
             candidates.append(item)
-
     return candidates
 
 
 def find_valid_directions(word:str, width:int, height:int) -> tuple:
+    """Finds the allowed directions or orientations of a given word, in a hypothetical grid."""
     word_len = len(word)
     valid_directions = [d for d in Directions]
     if word_len > width:
@@ -198,7 +210,18 @@ def find_valid_directions(word:str, width:int, height:int) -> tuple:
     return tuple(valid_directions)
 
 
-def send_puzzles_to_writer(start_nodes:list[LinkedListItemSingleLink], writer_func:Callable, adapter_func:Callable, grid_width:int, grid_height:int) -> None:
+def random_fill_puzzle_grid(grid:Grid) -> Grid:
+    """Replaces empty grid places with random letters."""
+    for i in range(grid.width):
+        for j in range(grid.height):
+            if grid[i,j] == grid.placeholder:
+                grid[i,j] = choice(ascii_lowercase)
+    return grid
+
+
+def send_puzzles_to_writer(start_nodes:list[LinkedListItemSingleLink], writer_func:Callable, adapter_func:Callable, grid_width:int, grid_height:int, complete_grids:bool, placeholder:str) -> None:
+    """Given a set of starting nodes for puzzle combinations, generate each puzzle then send it to
+    a file writer callback."""
     for node in start_nodes:
         word_data = [node.data]
         prev_link = node.link
@@ -207,15 +230,19 @@ def send_puzzles_to_writer(start_nodes:list[LinkedListItemSingleLink], writer_fu
             prev_link = prev_link.link
         word_data = adapter_func(tuple(word_data))
         grid = Grid(width=grid_width, height=grid_height)
-        grid.placeholder = '*'
+        grid.placeholder = placeholder
         for entry in word_data:
             x, y, c = entry
             grid[x, y] = c
+        if complete_grids:
+            grid = random_fill_puzzle_grid(grid)
         writer_func(str(grid))
         writer_func(';')
 
 
-def recurse_update_linked_list(prev_item:LinkedListItemSingleLink, next_word_ndx:int, wordlist:list[str], candidates_func:Callable, directions_func:Callable, end_state_callback_func:Callable, new_item_limit:int=-1) -> None:
+def recurse_update_linked_list(prev_item:LinkedListItemSingleLink, next_word_ndx:int, wordlist:list[str], candidates_func:Callable, directions_func:Callable, end_state_callback_func:Callable, new_item_limit:int) -> None:
+    """Recursively build out the linked list tree for puzzle combinations. When a full combination is identified,
+    pass it to a callback function for further processing."""
     if new_item_limit == 0:
         return
     next_word = wordlist[next_word_ndx]
@@ -259,6 +286,7 @@ def recurse_update_linked_list(prev_item:LinkedListItemSingleLink, next_word_ndx
 
     if next_word_ndx + 1 >= len(wordlist):
         end_state_callback_func(new_items)
+        # limits memory usage
         for item in new_items:
             item.link = None
         prev_item.link = None
@@ -279,63 +307,63 @@ def recurse_update_linked_list(prev_item:LinkedListItemSingleLink, next_word_ndx
             recurse_update_linked_list(next_item, next_word_ndx + 1, wordlist, candidates_func, directions_func, end_state_callback_func, new_item_limit=next_limit)
 
 
-# def process_write_to_file(queue:mp.Queue, filename:str):
-#         running = True
-#         while running:
-#             if not queue.empty():
-#                 next_item = queue.get()
-#                 if next_item == END_MSG_WRITE:
-#                     running = False
-#                     continue
-#                 with open(filename, 'a') as fp:
-#                     fp.write(next_item)
-
-
 def parse_args():
-    parser = argparse.ArgumentParser()
+    """Command line arguments."""
+    parser = argparse.ArgumentParser(epilog="""Default Behaviour: Creates a single random puzzle, incomplete, as a square grid the width of the longest word.
+    Grid places not filled with letters have a `*` symbol as a placeholder.""")
     parser.add_argument('wordlist', help='Text file containing a list of words to use. Words must be separated by newlines and contain only letters.')
-    parser.add_argument('-w', '--width', type=int, help='Width of the puzzle, in letters.')
-    parser.add_argument('-l', '--height', type=int, help='Height of the puzzle, in letters.')
-    parser.add_argument('-p', '--puzzle_count', type=int, default=0, help="Limit output to the number of puzzles given")
-    parser.add_argument('-o', '--output_filename', default=None, help="Text File to save the resulting puzzles to.")
+    parser.add_argument('-w', '--width', type=int, help='Width of the puzzle grid. Must be a whole number. Defaults to the length of the longest word.')
+    parser.add_argument('-l', '--height', type=int, help='Height of the puzzle grid. Must be a whole number. Defaults to the length of the longest word.')
+    parser.add_argument('-p', '--puzzle_count', type=int, default=1, help="The number of puzzles to create.")
+    parser.add_argument('-c', '--create_all', action='store_true', help="create all possible puzzle combinations. Overrides -p and --puzzle_count")
+    parser.add_argument('--incomplete', action='store_true', help='Save the resulting puzzles as incomplete grids, with a placeholder symbol for places not used by words.')
+    parser.add_argument('--placeholder', type=str, default='*', help='Symbol to use as a placeholder when making incomplete puzzles. Ignored if --incomplete is not specified.')
+    parser.add_argument('-o', '--output_filename', type=str, default=DEFAULT_OUTPUT_FILE, help="Text File to save the resulting puzzles to. The default is 'output.txt'. If the specified (or default) file exists, a new file is created instead.")
     parser.add_argument('--DEBUG', action='store_true', help="Show some simple debugging output to the screen.")
-    parser.add_argument('--LOGGING', action='store_true', help="Write verbose info to a logging file. CAUTION -- file could become very big!!")
+    parser.add_argument('--LOGGING', action='store_true', help="Write verbose info to a logging file. The --DEBUG option must also be specified.  CAUTION -- logging file could become very big!!")
     return parser.parse_args()
 
 
 def main() -> None:
+    "Main function."
     start_time = time()
     args = parse_args()
     if args.DEBUG:
         global DEBUG
         DEBUG = True
     if not path.exists(args.wordlist):
-        print(f"ERROR: file {args.wordlist} could not be found")
+        print(f"ERROR: the filepath '{args.wordlist}' could not be found.")
         return
     wlist = get_wordlist(args.wordlist)
+    wlist = sorted(wlist, key=lambda x: len(x), reverse=True)
     greatest_length = len(wlist[0])
-    WORD_SEARCH_WIDTH = greatest_length
-    WORD_SEARCH_HEIGHT = greatest_length
-    if args.width < WORD_SEARCH_WIDTH:
+
+    if args.width is None:
+        WORD_SEARCH_WIDTH = greatest_length
+    elif args.width < greatest_length:
         print("WARNING: specified width is shorter than the longest word. Increasing width to fit word.")
+        WORD_SEARCH_WIDTH = greatest_length
     else:
         WORD_SEARCH_WIDTH = args.width
-    if args.height < WORD_SEARCH_HEIGHT:
+
+    if args.height is None:
+        WORD_SEARCH_HEIGHT = greatest_length
+    elif args.height < greatest_length:
         print("WARNING: specified height is shorter than the longest word. Increasing height to fit word.")
+        WORD_SEARCH_HEIGHT = greatest_length
     else:
         WORD_SEARCH_HEIGHT = args.height
-    NUM_PUZZLES:int = -1
-    if args.puzzle_count > 0:
-        NUM_PUZZLES = args.puzzle_count
-    if args.output_filename is not None:
-        OUTPUT_FILENAME = args.output_filename
-    else:
-        OUTPUT_FILENAME = f"puzzle_output.{time()}.txt"
+    NUM_PUZZLES = args.puzzle_count
+    if args.create_all:
+        NUM_PUZZLES = -1
+    OUTPUT_FILENAME = args.output_filename
     fname_counter = 0
     while path.exists(OUTPUT_FILENAME):
         OUTPUT_FILENAME = OUTPUT_FILENAME.rsplit(f".{fname_counter}.txt", 1)[0]
         fname_counter += 1
         OUTPUT_FILENAME = f"{OUTPUT_FILENAME}.{fname_counter}.txt"
+    COMPLETE_GRIDS = not args.incomplete
+    GRID_PLACEHOLDER = args.placeholder
 
 
     adapter_ = word_data_tuple_to_dict_adapter()
@@ -344,7 +372,7 @@ def main() -> None:
     get_word_candidates = partial(find_word_candidates, validator_funcs=validators, width=WORD_SEARCH_WIDTH, height=WORD_SEARCH_HEIGHT)
     get_valid_directions = partial(find_valid_directions, width=WORD_SEARCH_WIDTH, height=WORD_SEARCH_HEIGHT)
     writerProcess = ProcessManager(OUTPUT_FILENAME)
-    puzzle_writer_ = partial(send_puzzles_to_writer, writer_func=writerProcess.add, adapter_func=adapter_, grid_width=WORD_SEARCH_WIDTH, grid_height=WORD_SEARCH_HEIGHT)
+    puzzle_writer_ = partial(send_puzzles_to_writer, writer_func=writerProcess.add, adapter_func=adapter_, grid_width=WORD_SEARCH_WIDTH, grid_height=WORD_SEARCH_HEIGHT, placeholder=GRID_PLACEHOLDER, complete_grids=COMPLETE_GRIDS)
 
     recurse_create_puzzles = partial(recurse_update_linked_list, wordlist=wlist, candidates_func=get_word_candidates, directions_func=get_valid_directions, end_state_callback_func=puzzle_writer_)
 
@@ -366,16 +394,21 @@ def main() -> None:
 
     if args.DEBUG:
         print(">>> puzzle generation complete.")
+        print(">>> waiting for writer process to finish...")
 
     writerProcess.halt()
 
     if args.DEBUG:
+        print(">>> Writer process halted.")
         print("TOTAL NODES ==", NODE_COUNT)
         print("MAX GRAPH MEMORY SIZE  ==", LL_MEMORY_SIZE, "bytes")
         total_time = int((time() - start_time) * 100) / 100
         print("TOTAL TIME  ==", total_time, "seconds")
         with open(OUTPUT_FILENAME) as fp:
-            print("output puzzle count =", len(fp.read().split(";")[:-1]))
+            data = fp.read()
+            print("output puzzle count =", len(data.split(";")[:-1]))
+            print("output file size =", len(data), "bytes")
+
 
 if __name__ == "__main__":
     main()

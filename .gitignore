@@ -207,4 +207,5 @@ marimo/_lsp/
 __marimo__/
 
 output/
-output.*
+puzzle_output.*
+test_wordlist*.*
