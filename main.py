@@ -1,8 +1,8 @@
 import argparse
+import multiprocessing as mp
 import sys
 from enum import Enum
 from functools import partial
-from math import floor
 from os import path
 from time import time
 from typing import Any, Callable
@@ -21,6 +21,42 @@ LOGGING_FILE = f"word_search_generation.{time()}.log"
 NODE_COUNT = 0
 LL_MEMORY_SIZE = 0
 DEBUG = False
+
+
+class ProcessManager:
+    END_MSG_WRITE = '!!EOF'
+
+    def __init__(self, filename:str, mode:str='a'):
+        ctx = mp.get_context('spawn')
+        self._queue:mp.Queue[str] = ctx.Queue()
+        self._fname = filename
+        self._fmode = mode
+        self._process = ctx.Process(target=self.process_write_to_file)
+        self._process.start()
+        # print("Starting Process")
+
+    def add(self, item):
+        if self._queue is not None:
+            self._queue.put(item)
+            # print("Queued Item:", item)
+
+    def process_write_to_file(self):
+        while True:
+            # print("Queue size:", self._queue.qsize())
+            if not self._queue.empty():
+                next_item = self._queue.get()
+                if next_item == self.END_MSG_WRITE:
+                    with open(self._fname, self._fmode) as fp:
+                        fp.flush()
+                    break
+                with open(self._fname, self._fmode) as fp:
+                    fp.write(next_item)
+                    # print("Writing Item:", next_item)
+        # print(">>> End of Process Func")
+
+    def halt(self):
+        self.add(self.END_MSG_WRITE)
+        self._process.join()
 
 
 class Directions(Enum):
@@ -162,7 +198,7 @@ def find_valid_directions(word:str, width:int, height:int) -> tuple:
     return tuple(valid_directions)
 
 
-def write_puzzles_to_output(start_nodes:list[LinkedListItemSingleLink], output_filename:str, adapter_func:Callable, grid_width:int, grid_height:int) -> None:
+def send_puzzles_to_writer(start_nodes:list[LinkedListItemSingleLink], writer_func:Callable, adapter_func:Callable, grid_width:int, grid_height:int) -> None:
     for node in start_nodes:
         word_data = [node.data]
         prev_link = node.link
@@ -175,11 +211,8 @@ def write_puzzles_to_output(start_nodes:list[LinkedListItemSingleLink], output_f
         for entry in word_data:
             x, y, c = entry
             grid[x, y] = c
-        with open(output_filename, 'a') as fp:
-            if DEBUG:
-                print("writing grid to file")
-            fp.write(str(grid))
-            fp.write(';')
+        writer_func(str(grid))
+        writer_func(';')
 
 
 def recurse_update_linked_list(prev_item:LinkedListItemSingleLink, next_word_ndx:int, wordlist:list[str], candidates_func:Callable, directions_func:Callable, end_state_callback_func:Callable, new_item_limit:int=-1) -> None:
@@ -209,8 +242,8 @@ def recurse_update_linked_list(prev_item:LinkedListItemSingleLink, next_word_ndx
             if next_limit <= 1:
                 next_limit = 1
             else:
-                differential = next_limit - floor(next_limit)
-                next_limit = floor(next_limit)
+                differential = next_limit - int(next_limit)
+                next_limit = int(next_limit) + 1
     else:
         for _ in range(new_item_limit):
             data = items_data.pop()
@@ -235,14 +268,27 @@ def recurse_update_linked_list(prev_item:LinkedListItemSingleLink, next_word_ndx
                 recurse_update_linked_list(next_item, next_word_ndx + 1, wordlist, candidates_func, directions_func, end_state_callback_func, new_item_limit=next_limit)
         else:
             tmp_ = 0
-            for next_item in new_items:
+            for next_item in new_items[:-1]:
                 tmp_ += differential
                 if tmp_ < 1:
-                    recurse_update_linked_list(next_item, next_word_ndx + 1, wordlist, candidates_func, directions_func, end_state_callback_func, new_item_limit=next_limit)
+                    recurse_update_linked_list(next_item, next_word_ndx + 1, wordlist, candidates_func, directions_func, end_state_callback_func, new_item_limit=next_limit - 1)
                 else:
-                    recurse_update_linked_list(next_item, next_word_ndx + 1, wordlist, candidates_func, directions_func, end_state_callback_func, new_item_limit=next_limit + 1)
+                    recurse_update_linked_list(next_item, next_word_ndx + 1, wordlist, candidates_func, directions_func, end_state_callback_func, new_item_limit=next_limit)
                     tmp_ -= 1
+            next_item = new_items[-1]
+            recurse_update_linked_list(next_item, next_word_ndx + 1, wordlist, candidates_func, directions_func, end_state_callback_func, new_item_limit=next_limit)
 
+
+# def process_write_to_file(queue:mp.Queue, filename:str):
+#         running = True
+#         while running:
+#             if not queue.empty():
+#                 next_item = queue.get()
+#                 if next_item == END_MSG_WRITE:
+#                     running = False
+#                     continue
+#                 with open(filename, 'a') as fp:
+#                     fp.write(next_item)
 
 
 def parse_args():
@@ -297,7 +343,9 @@ def main() -> None:
     validators = tuple([validator_no_overlap])
     get_word_candidates = partial(find_word_candidates, validator_funcs=validators, width=WORD_SEARCH_WIDTH, height=WORD_SEARCH_HEIGHT)
     get_valid_directions = partial(find_valid_directions, width=WORD_SEARCH_WIDTH, height=WORD_SEARCH_HEIGHT)
-    puzzle_writer_ = partial(write_puzzles_to_output, output_filename=OUTPUT_FILENAME, adapter_func=adapter_, grid_width=WORD_SEARCH_WIDTH, grid_height=WORD_SEARCH_HEIGHT)
+    writerProcess = ProcessManager(OUTPUT_FILENAME)
+    puzzle_writer_ = partial(send_puzzles_to_writer, writer_func=writerProcess.add, adapter_func=adapter_, grid_width=WORD_SEARCH_WIDTH, grid_height=WORD_SEARCH_HEIGHT)
+
     recurse_create_puzzles = partial(recurse_update_linked_list, wordlist=wlist, candidates_func=get_word_candidates, directions_func=get_valid_directions, end_state_callback_func=puzzle_writer_)
 
     if args.DEBUG and args.LOGGING:
@@ -319,12 +367,15 @@ def main() -> None:
     if args.DEBUG:
         print(">>> puzzle generation complete.")
 
+    writerProcess.halt()
+
     if args.DEBUG:
         print("TOTAL NODES ==", NODE_COUNT)
         print("MAX GRAPH MEMORY SIZE  ==", LL_MEMORY_SIZE, "bytes")
         total_time = int((time() - start_time) * 100) / 100
         print("TOTAL TIME  ==", total_time, "seconds")
-
+        with open(OUTPUT_FILENAME) as fp:
+            print("output puzzle count =", len(fp.read().split(";")[:-1]))
 
 if __name__ == "__main__":
     main()
