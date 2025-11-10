@@ -17,21 +17,31 @@ INPUT_FILENAME = "testing\\test_wordlist.txt"
 INPUT_FILENAME_COMPLEX = "testing\\test_wordlist_complex.txt"
 
 EXPECTED_PUZZLES_15 = (
-    (0, "******,*e****,*le***,*elr*o,**nuhw,***oft;"),
-    (1, "******,******,o**l**,*wl***,*uteno,feerht;"),
-    (14, "*e****,**e***,**lr**,*oelh*,**wnut,***tof;"),
+    "threef,onet*u,***w*l,***o*l,******,******;",
+    "tfullo,wh***n,o*r**e,***e**,****e*,******;",
+    "tfullo,hw***n,r*o**e,e*****,e*****,******;",
+    "fthree,ouw***,*nlo**,**el**,******,******;",
+    "ftonet,*uh**w,**lr*o,***le*,*****e,******;",
+    "ftone*,uhw***,lr*o**,le****,*e****,******;",
+    "fotwo*,unh***,ler***,l*e***,**e***,******;",
+    "fott**,unwh**,leor**,l**e**,***e**,******;",
+    "fullto,***whn,**o*re,****e*,****e*,******;",
+    "fullto,***hwn,**r*oe,*e****,e*****,******;",
+    "eerhtf,one*wu,****ol,*****l,******,******;",
+    "fullot,two*nh,****er,*****e,*****e,******;",
+    "fullot,***nhw,**er*o,**e***,*e****,******;",
+    "feerht,ou***w,*nl**o,**el**,******,******;",
+    "full*o,threen,*w***e,**o***,******,******;",
 )
 
 EXPECTED_PUZZLES_1000 = (
-    (0, "three*,******,**l***,*oel**,**wnu*,***tof;"),
-    (1, "three*,******,******,**oe**,*wn***,tolluf;"),
-    (11, "three*,******,**l***,**le**,**u*n*,**ftwo;"),
-    (47, '*three,******,******,**oe**,*wn***,tolluf;'),
-    (193, '*****t,****h*,***r*o,**ee*w,*e**nt,lluf*o;'),
-    (277, '******,*three,******,**oe**,*w**n*,tfullo;'),
-    (578, '****e*,***e**,**r***,*hoe**,twn***,tolluf;'),
-    (726, 'e*****,*e****,**r***,**oh*e,*w**tn,tfullo;'),
-    (999, '******,*e****,**e***,***r*o,fullhw,**enot;'),
+    (0, "threef,onet*u,***w*l,***o*l,******,******;"),
+    (1, "threef,onetu*,***lw*,**l**o,******,******;"),
+    (11, "threeo,*w*f*n,**ou*e,***l**,***l**,******;"),
+    (47, 'fthree,uonet*,l***w*,l***o*,******,******;'),
+    (193, 'oneftt,**uwh*,*lor**,l*e***,*e****,******;'),
+    (726, 'eone*f,te**u*,w*rl**,o*lh**,****t*,******;'),
+    (999, 'onetwo,*efull,**e***,***r**,****h*,*****t;'),
 )
 
 COUNT_TESTS = True
@@ -50,19 +60,20 @@ class MockProcessManager:
 
 def setup():
     args = argparse.Namespace()
-    args.wordlist = INPUT_FILENAME
+    with open(INPUT_FILENAME) as fp:
+        wordlist = [w for w in fp.read().split('\n') if w]
+    args.wordlist_file = None
     args.output_filename = OUTPUT_FILENAME
     args.width = 6
     args.height = 6
     args.DEBUG = False
     args.LOGGING = False
-    args.output_filename = None
     args.create_all = False
     args.placeholder = "*"
     args.puzzle_count = 0
     args.incomplete = True
     args.sequential = True
-    return {'args':args}
+    return {'args':args, 'wordlist':wordlist}
 
 
 def tear_down() -> None:
@@ -70,173 +81,125 @@ def tear_down() -> None:
         os.unlink(OUTPUT_FILENAME)
 
 
-def test_create_one_deterministic_puzzle():
+def test_create_15_deterministic_puzzles():
     kwargs = setup()
-    args = kwargs['args']
-    args.puzzle_count = 1
-    args.sequential = True
+    test_args = kwargs['args']
+    wordlist = kwargs['wordlist']
+    test_args.puzzle_count = 15
+    test_args.sequential = True
     output_puzzles = []
-    make_puzzles.make_puzzles(args, output_puzzles.append)
-    assert len(output_puzzles) == 1
-    assert EXPECTED_PUZZLES_15[0][1] == output_puzzles[0]
-    tear_down()
-
-
-def test_create_two_deterministic_puzzles():
-    kwargs = setup()
-    args = kwargs['args']
-    args.puzzle_count = 2
-    args.sequential = True
-    output_puzzles = []
-    make_puzzles.make_puzzles(args, output_puzzles.append)
-    assert len(output_puzzles) == 2
-    assert EXPECTED_PUZZLES_15[0][1] == output_puzzles[0]
-    assert EXPECTED_PUZZLES_15[1][1] == output_puzzles[1]
-    tear_down()
-
-
-def test_create_fifteen_deterministic_puzzles():
-    kwargs = setup()
-    args = kwargs['args']
-    args.puzzle_count = 15
-    args.sequential = True
-    output_puzzles = []
-    make_puzzles.make_puzzles(args, output_puzzles.append)
+    make_puzzles.make_puzzles(test_args, wordlist, output_puzzles.append)
     assert len(output_puzzles) == 15
-    for ndx, puzzle in EXPECTED_PUZZLES_15:
+    for i in range(15):
+        assert EXPECTED_PUZZLES_15[i] == output_puzzles[i]
+    tear_down()
+
+
+def test_create_thousand_deterministic_puzzles():
+    kwargs = setup()
+    test_args = kwargs['args']
+    wordlist = kwargs['wordlist']
+    test_args.puzzle_count = 1000
+    test_args.sequential = True
+    output_puzzles = []
+    make_puzzles.make_puzzles(test_args, wordlist, output_puzzles.append)
+    assert len(output_puzzles) == 1000
+    for ndx, puzzle in EXPECTED_PUZZLES_1000:
         assert puzzle == output_puzzles[ndx]
     tear_down()
 
-if COUNT_TESTS:
-    def test_create_hundred_random_puzzles():
-        kwargs = setup()
-        args = kwargs['args']
-        args.puzzle_count = 100
-        args.sequential = False
-        output_puzzles = []
-        make_puzzles.make_puzzles(args, output_puzzles.append)
-        assert len(output_puzzles) == 100
-        tear_down()
+
+def test_create_hundred_random_puzzles():
+    kwargs = setup()
+    test_args = kwargs['args']
+    wordlist = kwargs['wordlist']
+    test_args.puzzle_count = 100
+    test_args.sequential = False
+    output_puzzles = []
+    make_puzzles.make_puzzles(test_args, wordlist, output_puzzles.append)
+    assert len(output_puzzles) == 100
+    tear_down()
 
 
-    def test_create_thousand_deterministic_puzzles():
-        kwargs = setup()
-        args = kwargs['args']
-        args.puzzle_count = 1000
-        args.sequential = True
-        output_puzzles = []
-        make_puzzles.make_puzzles(args, output_puzzles.append)
-        assert len(output_puzzles) == 1000
-        for ndx, puzzle in EXPECTED_PUZZLES_1000:
-            assert puzzle == output_puzzles[ndx]
-        tear_down()
+def test_create_5000_random_puzzles():
+    kwargs = setup()
+    mock_writer = MockProcessManager()
+    test_args = kwargs['args']
+    wordlist = kwargs['wordlist']
+    test_args.puzzle_count = 5000
+    test_args.sequential = False
+    make_puzzles.make_puzzles(test_args, wordlist, mock_writer.add)
+    actual_puzzle_count = mock_writer.count
+    assert actual_puzzle_count == 5000
+    tear_down()
 
 
-    def test_create_5000_random_puzzles():
-        kwargs = setup()
-        mock_writer = MockProcessManager()
-        args = kwargs['args']
-        args.puzzle_count = 5000
-        args.sequential = False
-        make_puzzles.make_puzzles(args, mock_writer.add)
-        actual_puzzle_count = mock_writer.count
-        assert actual_puzzle_count == 5000
-        tear_down()
+def test_create_13857_random_puzzles():
+    kwargs = setup()
+    mock_writer = MockProcessManager()
+    test_args = kwargs['args']
+    wordlist = kwargs['wordlist']
+    test_args.puzzle_count = 13857
+    test_args.sequential = False
+    make_puzzles.make_puzzles(test_args, wordlist,  mock_writer.add)
+    actual_puzzle_count = mock_writer.count
+    assert actual_puzzle_count == 13857
+    tear_down()
 
 
-    def test_create_8000_random_puzzles():
-        kwargs = setup()
-        mock_writer = MockProcessManager()
-        args = kwargs['args']
-        args.puzzle_count = 8000
-        args.sequential = False
-        make_puzzles.make_puzzles(args, mock_writer.add)
-        actual_puzzle_count = mock_writer.count
-        assert actual_puzzle_count == 8000
-        tear_down()
+def test_create_various_puzzles():
+    ### check an edge case regarding puzzle counts in 2 ^ n form
+    kwargs = setup()
+    test_args = kwargs['args']
+    wordlist = kwargs['wordlist']
+    for n in range(6, 15):
+        base_expected_puzzle_count = 2**n
+        for offset in range(-3, 4):
+            expected = base_expected_puzzle_count + offset
+            test_args.puzzle_count = expected
+            test_args.sequential = False
+            mock_writer = MockProcessManager()
+            make_puzzles.make_puzzles(test_args, wordlist, mock_writer.add)
+            actual_puzzle_count = mock_writer.count
+            assert actual_puzzle_count == expected
+            test_args.sequential = True
+            mock_writer = MockProcessManager()
+            make_puzzles.make_puzzles(test_args, wordlist, mock_writer.add)
+            actual_puzzle_count = mock_writer.count
+            assert actual_puzzle_count == expected
+    tear_down()
 
-
-    def test_create_9125_random_puzzles():
-        kwargs = setup()
-        mock_writer = MockProcessManager()
-        args = kwargs['args']
-        args.puzzle_count = 9125
-        args.sequential = False
-        make_puzzles.make_puzzles(args, mock_writer.add)
-        actual_puzzle_count = mock_writer.count
-        assert actual_puzzle_count == 9125
-        tear_down()
-
-
-    def test_create_13857_random_puzzles():
-        kwargs = setup()
-        mock_writer = MockProcessManager()
-        args = kwargs['args']
-        args.puzzle_count = 13857
-        args.sequential = False
-        make_puzzles.make_puzzles(args, mock_writer.add)
-        actual_puzzle_count = mock_writer.count
-        assert actual_puzzle_count == 13857
-        tear_down()
-
-
-    def test_create_17777_deterministic_puzzles():
-        kwargs = setup()
-        mock_writer = MockProcessManager()
-        args = kwargs['args']
-        args.puzzle_count = 17777
-        args.sequential = True
-        make_puzzles.make_puzzles(args, mock_writer.add)
-        actual_puzzle_count = mock_writer.count
-        assert actual_puzzle_count == 17777
-        tear_down()
-
-    def test_create_various_puzzles():
-        ### check an edge case regarding puzzle counts in 2 ^ n form
-        kwargs = setup()
-        args = kwargs['args']
-        for n in range(6, 15):
-            base_expected_puzzle_count = 2**n
-            for offset in range(-3, 4):
-                expected = base_expected_puzzle_count + offset
-                args.puzzle_count = expected
-                args.sequential = False
-                mock_writer = MockProcessManager()
-                make_puzzles.make_puzzles(args, mock_writer.add)
-                actual_puzzle_count = mock_writer.count
-                assert actual_puzzle_count == expected
-                args.sequential = True
-                mock_writer = MockProcessManager()
-                make_puzzles.make_puzzles(args, mock_writer.add)
-                actual_puzzle_count = mock_writer.count
-                assert actual_puzzle_count == expected
-        tear_down()
 
 if LONG_TESTS:
     def test_create_all_puzzles():
         kwargs = setup()
-        args = kwargs['args']
-        args.create_all = True
-        args.sequential = True
+        test_args = kwargs['args']
+        wordlist = kwargs['wordlist']
+        test_args.create_all = True
+        test_args.sequential = True
         mock_writer = MockProcessManager()
-        make_puzzles.make_puzzles(args, mock_writer.add)
+        make_puzzles.make_puzzles(test_args, wordlist, mock_writer.add)
         actual_puzzle_count = mock_writer.count
         assert actual_puzzle_count == 14435776
         tear_down()
 
 
 def test_create_complex_puzzles():
+    first_puzzle = "pheasantsparrowf,kvcplwrm*eagleaa,heuhebaaacaowl*n,*asliaalvgrgc**t,**wttcctlepou**a,***krukoroniwl*i,*****erecow*e*ll,******lenks*****,****************,****************,****************,****************,****************,****************,****************,****************,****************,****************,****************,****************,****************,****************,****************,****************"
+    last_puzzle = "albatroswallowfk,vulturepfowleape,c*mh*aravenanhes,*haag*lrc*gte*at,*wiugc*r*laa**cr,k*lcopooeis***oe,*l*nkwiwla****cl,*****e*en*****k*,******nt********,****************,****************,****************,****************,****************,****************,****************,****************,****************,****************,****************,****************,****************,****************,****************"
     kwargs = setup()
-    args = kwargs['args']
+    test_args = kwargs['args']
+    with open(INPUT_FILENAME_COMPLEX) as fp:
+        wordlist = [w for w in fp.read().split('\n') if w]
     output_puzzles = []
-    args.wordlist = INPUT_FILENAME_COMPLEX
-    args.width = 16
-    args.height = 24
-    args.puzzle_count = 100
-    args.sequential = True
-    make_puzzles.make_puzzles(args, output_puzzles.append)
+    test_args.wordlist_file = INPUT_FILENAME_COMPLEX
+    test_args.width = 16
+    test_args.height = 24
+    test_args.puzzle_count = 100
+    test_args.sequential = True
+    make_puzzles.make_puzzles(test_args, wordlist, output_puzzles.append)
     actual_puzzle_count = len(output_puzzles)
     assert actual_puzzle_count == 100
-    assert '****kn*stle*****,l**l*cewonliw***,ni*e*rokoraupo**,e*arue*ccltsggr*,v**t*l*kailaaaac' in output_puzzles[0]
-    assert 'pw*aacnclglttl**,g*oetlaeigalala*,a*hrwn*evhaeabuh,mpnoclafpaceswlv,lertsekfworrapsa' in output_puzzles[-1]
+    assert first_puzzle in output_puzzles[0]
+    assert last_puzzle in output_puzzles[-1]
     tear_down()

@@ -209,3 +209,5 @@ __marimo__/
 output/
 debug.txt
 tox.ini
+
+profiling/*.txt

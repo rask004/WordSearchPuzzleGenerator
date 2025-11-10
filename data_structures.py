@@ -1,9 +1,10 @@
 from enum import Enum
+from typing import Any
 
 type Position = tuple[int, int]
 
 
-class Directions(Enum):
+class Direction(Enum):
     """Representations of directions on a square grid."""
     UP = (0,-1)
     UP_RIGHT = (1,-1)
