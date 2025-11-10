@@ -1,5 +1,4 @@
-"""make_puzzles script
-For making word search puzzles."""
+"""For making word search puzzles."""
 import argparse
 import sys
 from decimal import Decimal, getcontext
@@ -232,6 +231,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('-s', '--sequential', action='store_true', help='Generate the puzzles in a predictable, repeatable order. Useful for testing and for study with new wordlists.')
     parser.add_argument('--DEBUG', action='store_true', help="Show some simple debugging output to the screen.")
     parser.add_argument('--LOGGING', action='store_true', help="Write verbose info to a logging file. The --DEBUG option must also be specified.  CAUTION -- logging file could become very big!!")
+    parser.add_argument('--TIMED', action='store_true', help="Show estimated duration of run time.")
     return parser.parse_args()
 
 
@@ -313,7 +313,7 @@ def make_puzzles(args:argparse.Namespace, new_puzzle_callback:Callable) -> None:
 if __name__ == "__main__":
     start_total_time = 0
     args = parse_args()
-    if args.DEBUG:
+    if args.DEBUG or args.TIMED:
         start_total_time = time()
     OUTPUT_FILENAME = args.output_filename
     fname_counter = 0
@@ -335,4 +335,5 @@ if __name__ == "__main__":
             data = fp.read()
             print("\t\toutput puzzle count =", len(data.split(";")[:-1]))
             print("\t\toutput file size =", len(data), "bytes")
-            print("\t\tTOTAL TIME (WRITING) =", int((time() - start_total_time) * 100) / 100)
+    if args.DEBUG or args.TIMED:
+        print("TOTAL TIME (ESTIMATE) =", int((time() - start_total_time) * 100) / 100, "seconds")

@@ -14,6 +14,8 @@ except ImportError:
 
 OUTPUT_FILENAME = "testing\\output.txt"
 INPUT_FILENAME = "testing\\test_wordlist.txt"
+INPUT_FILENAME_COMPLEX = "testing\\test_wordlist_complex.txt"
+
 EXPECTED_PUZZLES_15 = (
     (0, "******,*e****,*le***,*elr*o,**nuhw,***oft;"),
     (1, "******,******,o**l**,*wl***,*uteno,feerht;"),
@@ -221,3 +223,18 @@ if LONG_TESTS:
         actual_puzzle_count = mock_writer.count
         assert actual_puzzle_count == 14435776
         tear_down()
+
+
+def test_create_complex_puzzles():
+    kwargs = setup()
+    args = kwargs['args']
+    mock_writer = MockProcessManager()
+    args.wordlist = INPUT_FILENAME_COMPLEX
+    args.width = 16
+    args.height = 24
+    args.puzzle_count = 100
+    args.sequential = True
+    make_puzzles.make_puzzles(args, mock_writer.add)
+    actual_puzzle_count = mock_writer.count
+    assert actual_puzzle_count == 100
+    tear_down()

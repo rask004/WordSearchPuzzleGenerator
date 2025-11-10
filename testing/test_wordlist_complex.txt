@@ -1,0 +1,17 @@
+eagle
+swallow
+halk
+falcon
+sparrow
+fantail
+kestrel
+owl
+vulture
+seagull
+chicken
+peacock
+pheasant
+albatros
+crow
+raven
+magpie
