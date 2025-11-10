@@ -8,7 +8,7 @@ As this is a hobby project, expect some spagettii coding, bugs, limited document
 
 ## Purpose
 
-Generates a set of **randomised, partially filled word search puzzle grids**, based at minimum on a _pair of dimensions_ and a text file containing a _list of words_
+Generates a set of **randomised word search puzzle grids**, based at minimum from a text file containing a _list of words_
 
 ## Requirements
 
@@ -32,11 +32,12 @@ Creates one random puzzle, written to the file `puzzle_output.???.txt` with the 
 - Puzzle size, width `-w WIDTH` and height `-l HEIGHT` as options. `WIDTH` and `HEIGHT` must be _positive whole numbers_. If not specified, a square grid the size of the longest word is used. If either dimension is smaller than the length of the longest word, a warning should appear and the affected dimension is increased to match the longest word length.
 - Puzzle count, `-p COUNT` as option, to produce a fixed number of output puzzles.
 - Output puzzle file, `-o FILENAME` as option. `FILENAME` can include a path provided the directory structure already exists. Default is to save to `output.txt` in the working directory. If the output file already exists, a new one is created using the format `<FILENAME>.1.txt`, `<FILENAME>.2.txt`, etc.
-- `--DEBUG` to show general debugging messages.
-- `--LOGGING` to record debugging messages to a log file. The `--DEBUG`  flag mus be present too. All logged debugging messages are more verbose. Depending on how many puzzles are being produced, the log file can become quite large
-- `-c`, or `--create_all` to create all puzzle combinations possible. Overrides the Puzzle Count option, `-p COUNT`.
+- Create all possible puzzles, `-c`, or `--create_all`. Overrides the Puzzle Count option, `-p COUNT`.
 - `--incomplete` to create incomplete puzzle grids, with a placeholder symbol in places not used by words from the wordlist.
 - `--placeholder` to specify what symbol to use as a placeholder in incomplete grids. This does nothing if the `--incomplete` option is not used.
+- `-s`, or `--sequential` to create puzzles in a deterministic, ordered and repeatable manner. This can be useful for testing purposes, and studying the script behaviour with new wordlists.
+- `--DEBUG` to show general debugging messages.
+- `--LOGGING` to record debugging messages to a log file. The `--DEBUG`  flag mus be present too. All logged debugging messages are more verbose. Depending on how many puzzles are being produced, the log file can become quite large
 
 ## Output File
 

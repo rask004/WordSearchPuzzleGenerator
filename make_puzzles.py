@@ -1,15 +1,22 @@
+"""For making word search puzzles."""
 import argparse
-import multiprocessing as mp
 import sys
-from enum import Enum
+from decimal import Decimal, getcontext
 from functools import partial
 from os import path
 from random import choice
 from string import ascii_lowercase
 from time import time
-from typing import Any, Callable
+from typing import Any, Callable, Generator
 
-### TODO: figure out why
+import data_converters
+from data_structures import Directions, LinkedListItemSingleLink
+from process_managers import WriterProcessManager
+
+getcontext().prec = 32
+DECIMAL_ADJUSTMENT_FACTOR = Decimal(0.008)
+
+# GLOB_PUZZLE_COUNT = 0
 
 END_NODE = "END"
 LOGGING_FILE = f"word_search_generation.{time()}.log"
@@ -19,116 +26,7 @@ NODE_COUNT = 0
 LL_MEMORY_SIZE = 0
 DEBUG = False
 
-class ProcessManager:
-    END_MSG_WRITE = '!!EOF'
-
-    def __init__(self, filename:str, mode:str='a'):
-        ctx = mp.get_context('spawn')
-        self._queue:mp.Queue[str] = ctx.Queue()
-        self._fname = filename
-        self._fmode = mode
-        self._process = ctx.Process(target=self.process_write_to_file)
-        self._process.start()
-        # print("Starting Process")
-
-    def add(self, item):
-        if self._queue is not None:
-            self._queue.put(item)
-            # print("Queued Item:", item)
-
-    def process_write_to_file(self):
-        while True:
-            # print("Queue size:", self._queue.qsize())
-            if not self._queue.empty():
-                next_item = self._queue.get()
-                if next_item == self.END_MSG_WRITE:
-                    with open(self._fname, self._fmode) as fp:
-                        fp.flush()
-                    break
-                with open(self._fname, self._fmode) as fp:
-                    fp.write(next_item)
-                    # print("Writing Item:", next_item)
-        # print(">>> End of Process Func")
-
-    def halt(self):
-        self.add(self.END_MSG_WRITE)
-        self._process.join()
-
-
-class Directions(Enum):
-    UP = (0,-1)
-    UP_RIGHT = (1,-1)
-    RIGHT = (1,0)
-    DOWN_RIGHT = (1,1)
-    DOWN = (0,1)
-    DOWN_LEFT = (-1,1)
-    LEFT = (-1,0)
-    UP_LEFT = (-1,-1)
-
-
-class Grid:
-    def __init__(self, width:int, height:int) -> None:
-        self._width = width
-        self._height = height
-        self._placeholder = None
-        self._array:list[list[Any]] = [[None for _ in range(width)] for _ in range(height)]
-
-    def __getitem__(self, key):
-        x, y = key
-        return self._array[y][x]
-
-    def __setitem__(self, key, value) -> None:
-        x, y = key
-        self._array[y][x] = value
-
-    def __delitem__(self, key) -> None:
-        x, y = key
-        self._array[y][x] = None
-
-    def __str__(self) -> str:
-        rows = []
-        for r in self._array:
-            new_row = []
-            for x in r:
-                if x is None:
-                    new_row.append(str(self._placeholder))
-                else:
-                    new_row.append(str(x))
-            rows.append(''.join(new_row))
-        rows = ','.join(rows)
-        return str(rows)
-
-    @property
-    def width(self) -> int:
-        return self._width
-
-    @property
-    def height(self) -> int:
-        return self._height
-
-    @property
-    def placeholder(self) -> str:
-        return str(self._placeholder)
-
-    @placeholder.setter
-    def placeholder(self, value) -> None:
-        old_placeholder = self._placeholder
-        self._placeholder = str(value)
-        for i in range(self._width):
-            for j in range(self._height):
-                if self._array[j][i] == old_placeholder:
-                    self._array[j][i] = str(value)
-
-
-class LinkedListItemSingleLink:
-    __slots__ = ('data', 'link')
-    def __init__(self, data=None, link=None) -> None:
-        self.data:Any = data
-        self.link:LinkedListItemSingleLink|None = link
-
-    def __str__(self) -> str:
-        return f"<LinkedListItemSingleLink:data={self.data},link={self.link}>"
-
+### TODO: figure out why -p sometimes creates less puzzles than expected. Could be floating point precision issue?
 
 def get_wordlist(fname:str) -> list[str]:
     """Given a filename of a text file and assuming it contains a newline separated list of words,
@@ -140,40 +38,21 @@ def get_wordlist(fname:str) -> list[str]:
     return wordlist
 
 
-def word_data_tuple_to_dict_adapter():
-    """Returns an adapter closure for converting data representing word positions on grids, from
-    a tuple format to a dict format. The closure uses a hashed cache to speed up repeat conversions."""
-    func_cache = {}
-    def func_(word_data, cache=True):
-        hcode = hash(word_data)
-        if cache and hcode in func_cache:
-            return func_cache[hcode]
-        tmp = set()
-        for entry in word_data:
-            p, d, w = entry
-            if isinstance(d, Directions):
-                d = d.value
-            for i, c in enumerate(w):
-                item = (p[0] + d[0] * i, p[1] + d[1] * i, c)
-                tmp.add(item)
-        tmp = tuple(sorted(tmp))
-        if cache:
-            func_cache[hcode] = tmp
-        return tmp
-    return func_
-
-
-def validator_non_overlapping(candidate_word_data, used_words_data, adapter) -> bool:
+def validator_non_overlapping(candidate_word_data, used_words_data, converter:Callable) -> bool:
     """Validation function to compare data representing words placed on a grid. Returns True if
     no words are overlapping or all overlapping words have the same letters at shared grid locations."""
-    used_words_data = adapter(used_words_data)
-    candidate_word_data = adapter(candidate_word_data, cache=False)
+    used_words_data = converter(used_words_data)
+    candidate_word_data = converter(candidate_word_data, cache=False)
     conflicts = [w for w in candidate_word_data for u in used_words_data if w[0] == u[0] and w[1] == u[1] and w[2] != u[2]]
     return not conflicts
 
 
-def word_candidates_gen(word:str, directions:tuple[Directions], width:int, height:int):
-    """Generator function to create valid placements and directions of a given word in a hypothetical grid."""
+def word_candidates_gen(word:str, directions:tuple[Directions], width:int, height:int) -> Generator[list, Any, None]:
+    """Generator function to create valid placements and directions of a given word in a hypothetical grid.
+    Returns:    list[
+                        (x,y)       coordinates
+                        [d, ...]    immutable sequence of directions
+    ]"""
     word_len = len(word)
     for y in range(height):
         for x in range(width):
@@ -187,10 +66,11 @@ def find_word_candidates(new_word:str, used_word_data:tuple, valid_directions:tu
     generator = word_candidates_gen(new_word, valid_directions, width, height)
     candidates = []
     for item in generator:
-        position, directions = item
+        position:tuple = item[0]
+        directions:list = item[1]
         for validate in validator_funcs:
             for j in range(len(directions)-1, -1, -1):
-                d = directions[j]
+                d:Directions = directions[j]
                 validation_data = ((position, d, new_word),)
                 if not validate(validation_data, used_word_data):
                     del directions[j]
@@ -210,41 +90,61 @@ def find_valid_directions(word:str, width:int, height:int) -> tuple:
     return tuple(valid_directions)
 
 
-def random_fill_puzzle_grid(grid:Grid) -> Grid:
+def random_fill_puzzle_grid(grid:tuple, placeholder = str|None) -> tuple:
     """Replaces empty grid places with random letters."""
-    for i in range(grid.width):
-        for j in range(grid.height):
-            if grid[i,j] == grid.placeholder:
-                grid[i,j] = choice(ascii_lowercase)
+    tmp_ = [[char for char in row] for row in grid]
+    for j in range(len(tmp_)):
+        row = tmp_[j]
+        for i in range(len(row)):
+            if row[i] == placeholder:
+                row[i] = choice(ascii_lowercase)
+    grid = tuple([tuple(row) for row in tmp_])
     return grid
 
 
-def send_puzzles_to_writer(start_nodes:list[LinkedListItemSingleLink], writer_func:Callable, adapter_func:Callable, grid_width:int, grid_height:int, complete_grids:bool, placeholder:str) -> None:
+def send_puzzles_to_writer(start_nodes:list[LinkedListItemSingleLink]|set[LinkedListItemSingleLink], writer_func:Callable, conversion_func:Callable, grid_width:int, grid_height:int, complete_grids:bool, placeholder:str) -> None:
     """Given a set of starting nodes for puzzle combinations, generate each puzzle then send it to
-    a file writer callback."""
+    a file writer callback.
+    start_nodes:            collection of LinkedList nodes to start from.
+    writer_func:            file writer callback function.
+    adapter_func:           function to convert from LinkedList data to data used by puzzle Grid.
+    grid_width:             width of puzzle grid, in letters.
+    grid_height:            height of puzzle grid, in letters.
+    complete_grids:         should unused grid locats be filled with random letters? otherwise use placeholder.
+    placeholder:            placeholder character used by incomplete grids."""
     for node in start_nodes:
         word_data = [node.data]
         prev_link = node.link
         while prev_link is not None and prev_link.data != END_NODE:
             word_data.append(prev_link.data)
             prev_link = prev_link.link
-        word_data = adapter_func(tuple(word_data))
-        grid = Grid(width=grid_width, height=grid_height)
-        grid.placeholder = placeholder
-        for entry in word_data:
-            x, y, c = entry
-            grid[x, y] = c
+        char_positions = conversion_func(tuple(word_data))
+        grid:tuple = data_converters.char_position_to_letter_grid_converter(char_positions, grid_width, grid_height, placeholder)
         if complete_grids:
             grid = random_fill_puzzle_grid(grid)
-        writer_func(str(grid))
-        writer_func(';')
+        str_rows = ["".join(row) for row in grid]
+        str_output = ",".join(str_rows)
+        str_output = "".join([str_output, ";"])
+        writer_func(str_output)
 
 
-def recurse_update_linked_list(prev_item:LinkedListItemSingleLink, next_word_ndx:int, wordlist:list[str], candidates_func:Callable, directions_func:Callable, end_state_callback_func:Callable, new_item_limit:int) -> None:
+def recurse_update_linked_list(prev_item:LinkedListItemSingleLink, next_word_ndx:int, wordlist:list[str], candidates_func:Callable, directions_func:Callable, end_state_callback_func:Callable, item_limit:Decimal, is_sequential:bool) -> None:
     """Recursively build out the linked list tree for puzzle combinations. When a full combination is identified,
-    pass it to a callback function for further processing."""
-    if new_item_limit == 0:
+    pass it to a callback function for further processing.
+    prev_item:              previous node to update from
+    next_word_ndx:          index number for next word to use, from the wordlist
+    wordlist:               list of word strings
+    candidates_func:        function which finds candidate positions and directions of a given word
+    directions_func:        function which finds valid directions a word in a given position, can have
+    end_state_callback:     function to call, upon leaf nodes, when leaf nodes are identified
+    new_item_limit:         counting limit, of new nodes to create
+    is_sequential:          are nodes created in deterministic sequence? otherwise random"""
+    if item_limit == 0:
         return
+
+    if DEBUG:
+        print(f"{'\t' * next_word_ndx}>>> recurse_update_linked_list:  {prev_item} {next_word_ndx} {wordlist[next_word_ndx]} {item_limit}")
+
     next_word = wordlist[next_word_ndx]
     prev_words_data = []
     if prev_item.data != END_NODE:
@@ -254,28 +154,36 @@ def recurse_update_linked_list(prev_item:LinkedListItemSingleLink, next_word_ndx
         prev_words_data.append(prev_link.data)
         prev_link = prev_link.link
     prev_words_data = tuple(prev_words_data)
-    new_items = []
     directions = directions_func(next_word)
     candidates = candidates_func(next_word, prev_words_data, directions)
-    items_data:set[tuple[tuple, Directions, str]] = set([(pos, d, next_word) for pos, directions in candidates for d in directions])
-    next_limit = new_item_limit
-    differential = 0
-    if new_item_limit == 1:
+
+    items_data = [(pos, d, next_word) for pos, directions in candidates for d in directions]
+    if not is_sequential:
+        items_data = set(items_data)
+    new_item_count = len(items_data)
+    if DEBUG:
+        print(f"\t{'\t' * next_word_ndx}>>> candidates count:  word={next_word} count={len(items_data)}")
+
+    new_items = []
+    differential = Decimal(0)
+    if item_limit == 1:
         new_items.append(LinkedListItemSingleLink(items_data.pop(), prev_item))
-    elif new_item_limit == -1 or new_item_limit >= len(items_data):
+        next_limit = Decimal(1)
+    elif item_limit == -1:
         new_items = [LinkedListItemSingleLink(data, prev_item) for data in items_data]
-        if new_item_limit != -1:
-            next_limit = new_item_limit / len(items_data)
-            if next_limit <= 1:
-                next_limit = 1
-            else:
-                differential = next_limit - int(next_limit)
-                next_limit = int(next_limit) + 1
+        next_limit = Decimal(-1)
+    elif item_limit >= new_item_count:
+        new_items = [LinkedListItemSingleLink(data, prev_item) for data in items_data]
+        differential = (Decimal(item_limit) + DECIMAL_ADJUSTMENT_FACTOR) / Decimal(new_item_count)
+        next_limit = Decimal(int(differential))
     else:
-        for _ in range(new_item_limit):
+        current_item_limit = int(item_limit)
+        for _ in range(current_item_limit):
             data = items_data.pop()
             new_items.append(LinkedListItemSingleLink(data, prev_item))
-        next_limit = 1
+        next_limit = Decimal(1)
+    if not is_sequential:
+        new_items = set(new_items)
 
     if DEBUG:
         global NODE_COUNT
@@ -285,29 +193,30 @@ def recurse_update_linked_list(prev_item:LinkedListItemSingleLink, next_word_ndx
             LL_MEMORY_SIZE += sys.getsizeof(item)
 
     if next_word_ndx + 1 >= len(wordlist):
+        if DEBUG:
+            print(f"\n\t\t{'\t' * next_word_ndx}----- END STATE:  write {len(new_items)} puzzles.\n")
         end_state_callback_func(new_items)
         # limits memory usage
         for item in new_items:
             item.link = None
         prev_item.link = None
     else:
+        new_word_ndx = next_word_ndx + 1
         if not differential:
             for next_item in new_items:
-                recurse_update_linked_list(next_item, next_word_ndx + 1, wordlist, candidates_func, directions_func, end_state_callback_func, new_item_limit=next_limit)
+                if DEBUG:
+                    print(f"\t\t{'\t' * next_word_ndx}>>> future recursion:  next_limit={next_limit}, with no diff")
+                recurse_update_linked_list(next_item, new_word_ndx, wordlist, candidates_func, directions_func, end_state_callback_func, next_limit, is_sequential)
         else:
-            tmp_ = 0
-            for next_item in new_items[:-1]:
-                tmp_ += differential
-                if tmp_ < 1:
-                    recurse_update_linked_list(next_item, next_word_ndx + 1, wordlist, candidates_func, directions_func, end_state_callback_func, new_item_limit=next_limit - 1)
-                else:
-                    recurse_update_linked_list(next_item, next_word_ndx + 1, wordlist, candidates_func, directions_func, end_state_callback_func, new_item_limit=next_limit)
-                    tmp_ -= 1
-            next_item = new_items[-1]
-            recurse_update_linked_list(next_item, next_word_ndx + 1, wordlist, candidates_func, directions_func, end_state_callback_func, new_item_limit=next_limit)
+            old_c, next_c = Decimal(0), differential
+            for next_item in new_items:
+                if DEBUG:
+                        print(f"\t\t{'\t' * next_word_ndx}>>> future recursion:  next_limit={int(next_c) - int(old_c)}")
+                next_count = Decimal(int(next_c) - int(old_c))
+                recurse_update_linked_list(next_item, new_word_ndx, wordlist, candidates_func, directions_func, end_state_callback_func, next_count, is_sequential)
+                old_c, next_c = next_c, next_c + differential
 
-
-def parse_args():
+def parse_args() -> argparse.Namespace:
     """Command line arguments."""
     parser = argparse.ArgumentParser(epilog="""Default Behaviour: Creates a single random puzzle, incomplete, as a square grid the width of the longest word.
     Grid places not filled with letters have a `*` symbol as a placeholder.""")
@@ -319,15 +228,18 @@ def parse_args():
     parser.add_argument('--incomplete', action='store_true', help='Save the resulting puzzles as incomplete grids, with a placeholder symbol for places not used by words.')
     parser.add_argument('--placeholder', type=str, default='*', help='Symbol to use as a placeholder when making incomplete puzzles. Ignored if --incomplete is not specified.')
     parser.add_argument('-o', '--output_filename', type=str, default=DEFAULT_OUTPUT_FILE, help="Text File to save the resulting puzzles to. The default is 'output.txt'. If the specified (or default) file exists, a new file is created instead.")
+    parser.add_argument('-s', '--sequential', action='store_true', help='Generate the puzzles in a predictable, repeatable order. Useful for testing and for study with new wordlists.')
     parser.add_argument('--DEBUG', action='store_true', help="Show some simple debugging output to the screen.")
     parser.add_argument('--LOGGING', action='store_true', help="Write verbose info to a logging file. The --DEBUG option must also be specified.  CAUTION -- logging file could become very big!!")
+    parser.add_argument('--TIMED', action='store_true', help="Show estimated duration of run time.")
     return parser.parse_args()
 
 
-def main() -> None:
-    "Main function."
+def make_puzzles(args:argparse.Namespace, new_puzzle_callback:Callable) -> None:
+    """Main function.
+    args:                   command line arguments object.
+    new_puzzle_callback:    callback function for when new puzzles are found."""
     start_time = time()
-    args = parse_args()
     if args.DEBUG:
         global DEBUG
         DEBUG = True
@@ -356,25 +268,20 @@ def main() -> None:
     NUM_PUZZLES = args.puzzle_count
     if args.create_all:
         NUM_PUZZLES = -1
-    OUTPUT_FILENAME = args.output_filename
-    fname_counter = 0
-    while path.exists(OUTPUT_FILENAME):
-        OUTPUT_FILENAME = OUTPUT_FILENAME.rsplit(f".{fname_counter}.txt", 1)[0]
-        fname_counter += 1
-        OUTPUT_FILENAME = f"{OUTPUT_FILENAME}.{fname_counter}.txt"
-    COMPLETE_GRIDS = not args.incomplete
+    NUM_PUZZLES = Decimal(NUM_PUZZLES)
+    MAKE_COMPLETE_GRIDS = not args.incomplete
     GRID_PLACEHOLDER = args.placeholder
+    IS_SEQUENTIAL = args.sequential
 
 
-    adapter_ = word_data_tuple_to_dict_adapter()
-    validator_no_overlap = partial(validator_non_overlapping, adapter=adapter_)
+    converter_ = data_converters.make_word_placement_to_char_position_converter()
+    validator_no_overlap = partial(validator_non_overlapping, converter=converter_)
     validators = tuple([validator_no_overlap])
     get_word_candidates = partial(find_word_candidates, validator_funcs=validators, width=WORD_SEARCH_WIDTH, height=WORD_SEARCH_HEIGHT)
     get_valid_directions = partial(find_valid_directions, width=WORD_SEARCH_WIDTH, height=WORD_SEARCH_HEIGHT)
-    writerProcess = ProcessManager(OUTPUT_FILENAME)
-    puzzle_writer_ = partial(send_puzzles_to_writer, writer_func=writerProcess.add, adapter_func=adapter_, grid_width=WORD_SEARCH_WIDTH, grid_height=WORD_SEARCH_HEIGHT, placeholder=GRID_PLACEHOLDER, complete_grids=COMPLETE_GRIDS)
+    puzzle_writer_ = partial(send_puzzles_to_writer, writer_func=new_puzzle_callback, conversion_func=converter_, grid_width=WORD_SEARCH_WIDTH, grid_height=WORD_SEARCH_HEIGHT, placeholder=GRID_PLACEHOLDER, complete_grids=MAKE_COMPLETE_GRIDS)
 
-    recurse_create_puzzles = partial(recurse_update_linked_list, wordlist=wlist, candidates_func=get_word_candidates, directions_func=get_valid_directions, end_state_callback_func=puzzle_writer_)
+    recurse_create_puzzles = partial(recurse_update_linked_list, candidates_func=get_word_candidates, directions_func=get_valid_directions, end_state_callback_func=puzzle_writer_)
 
     if args.DEBUG and args.LOGGING:
         with open(LOGGING_FILE, "a") as fp:
@@ -384,31 +291,49 @@ def main() -> None:
 
     if args.DEBUG:
         print(">>> beginning recursive puzzle generation.")
-    end_node = LinkedListItemSingleLink(END_NODE, None)
-    next_word_ndx = 0
-    global NODE_COUNT
-    NODE_COUNT += 1
-    global LL_MEMORY_SIZE
-    LL_MEMORY_SIZE += sys.getsizeof(end_node)
-    recurse_create_puzzles(end_node, next_word_ndx, new_item_limit=NUM_PUZZLES)
+    ending_node = LinkedListItemSingleLink(END_NODE, None)
+    start_word_ndx = 0
+    if DEBUG:
+        global NODE_COUNT
+        NODE_COUNT += 1
+        global LL_MEMORY_SIZE
+        LL_MEMORY_SIZE += sys.getsizeof(ending_node)
+    recurse_create_puzzles(ending_node, start_word_ndx, wlist, item_limit=NUM_PUZZLES, is_sequential=IS_SEQUENTIAL)
 
     if args.DEBUG:
         print(">>> puzzle generation complete.")
-        print(">>> waiting for writer process to finish...")
-
-    writerProcess.halt()
 
     if args.DEBUG:
-        print(">>> Writer process halted.")
         print("TOTAL NODES ==", NODE_COUNT)
         print("MAX GRAPH MEMORY SIZE  ==", LL_MEMORY_SIZE, "bytes")
         total_time = int((time() - start_time) * 100) / 100
-        print("TOTAL TIME  ==", total_time, "seconds")
-        with open(OUTPUT_FILENAME) as fp:
-            data = fp.read()
-            print("output puzzle count =", len(data.split(";")[:-1]))
-            print("output file size =", len(data), "bytes")
+        print("TOTAL TIME (GENERATION)  ==", total_time, "seconds")
 
 
 if __name__ == "__main__":
-    main()
+    start_total_time = 0
+    args = parse_args()
+    if args.DEBUG or args.TIMED:
+        start_total_time = time()
+    OUTPUT_FILENAME = args.output_filename
+    fname_counter = 0
+    while path.exists(OUTPUT_FILENAME):
+        OUTPUT_FILENAME = OUTPUT_FILENAME.rsplit(f".{fname_counter}.txt", 1)[0]
+        fname_counter += 1
+        OUTPUT_FILENAME = f"{OUTPUT_FILENAME}.{fname_counter}.txt"
+    writerProcess = WriterProcessManager(OUTPUT_FILENAME)
+    try:
+        make_puzzles(args, writerProcess.add)
+    except KeyboardInterrupt:
+        print("forcing program to halt...")
+    if args.DEBUG:
+        print(">>> Waiting for writer process to halt...")
+    writerProcess.halt()
+    if args.DEBUG:
+        print(">>> Writer Process Halted.")
+        with open(OUTPUT_FILENAME) as fp:
+            data = fp.read()
+            print("\t\toutput puzzle count =", len(data.split(";")[:-1]))
+            print("\t\toutput file size =", len(data), "bytes")
+    if args.DEBUG or args.TIMED:
+        print("TOTAL TIME (ESTIMATE) =", int((time() - start_total_time) * 100) / 100, "seconds")
