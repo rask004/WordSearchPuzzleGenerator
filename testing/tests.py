@@ -228,13 +228,15 @@ if LONG_TESTS:
 def test_create_complex_puzzles():
     kwargs = setup()
     args = kwargs['args']
-    mock_writer = MockProcessManager()
+    output_puzzles = []
     args.wordlist = INPUT_FILENAME_COMPLEX
     args.width = 16
     args.height = 24
     args.puzzle_count = 100
     args.sequential = True
-    make_puzzles.make_puzzles(args, mock_writer.add)
-    actual_puzzle_count = mock_writer.count
+    make_puzzles.make_puzzles(args, output_puzzles.append)
+    actual_puzzle_count = len(output_puzzles)
     assert actual_puzzle_count == 100
+    assert '****kn*stle*****,l**l*cewonliw***,ni*e*rokoraupo**,e*arue*ccltsggr*,v**t*l*kailaaaac' in output_puzzles[0]
+    assert 'pw*aacnclglttl**,g*oetlaeigalala*,a*hrwn*evhaeabuh,mpnoclafpaceswlv,lertsekfworrapsa' in output_puzzles[-1]
     tear_down()
