@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block title %}
+Word Search Puzzles - index page
+{% endblock %}
+{% block headers %}
+<link rel="stylesheet" href="{{ url_for('static', filename='index.css') }}" />
+{% endblock %}
+{% block content %}
+<h1>Help with API</h1>
+<div class="help">
+    <div>
+        <h2>Loading a Puzzle webpage</h2>
+        <p>A page for a given puzzle can be found at:</p>
+        <code>/api/v1/{wordlist}/</code>
+        <p>where <code>wordlist</code> is the name of the list of words to use.</p>
+        <p>If a given wordlist does not exist, an error page will appear.</p>
+    </div>
+
+
+
+</div>
+{% endblock %}

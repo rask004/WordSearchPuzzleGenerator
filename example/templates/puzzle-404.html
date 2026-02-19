@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+
+{% block title %}
+Word Search Puzzles - {{ wordlist }}
+{% endblock %}
+
+{% block headers %}
+<link rel="stylesheet" href="{{ url_for('static', filename='puzzle.css') }}" />
+{% endblock %}
+
+{% block content %}
+<section class="wordlist-error">
+    <p>The wordlist <span>{{ wordlist }}</span> could not be found. </p>
+</section>
+{% endblock %}

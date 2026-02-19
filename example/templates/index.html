@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+
+{% block title %}
+Word Search Puzzles - index page
+{% endblock %}
+
+{% block headers %}
+<link rel="stylesheet" href="{{ url_for('static', filename='index.css') }}" />
+{% endblock %}
+
+{% block content %}
+<h1>List of Word Search Puzzles</h1>
+<h2>Click on a puzzle to begin playing</h2>
+<div class="puzzle-list">
+    <ul>
+        {% for wordlist in names %}
+        <li><a href="/api/v1/{{ wordlist }}/">{{ wordlist.upper() }}</a></li>
+        {% endfor %}
+    </ul>
+</div>
+<div>
+    <p>For help with the API, go to the <a href="/api/">API help page</a>.</p>
+</div>
+{% endblock %}

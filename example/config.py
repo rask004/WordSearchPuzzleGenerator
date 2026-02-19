@@ -1,0 +1,2 @@
+DEBUG=True
+SECRET_KEY='cwa4tom8qyew49t03t4y5CW(#!IN'

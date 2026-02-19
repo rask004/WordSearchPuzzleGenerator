@@ -1,0 +1,52 @@
+p {
+    margin-top: 2.5rem;
+    font-size: 1.25rem;
+}
+
+.wordlist-container,
+.wordlist-error {
+    margin: 1.5rem;
+    font-size: 1.25rem;
+}
+
+.wordlist-container>span {
+    margin-right: 1rem;
+    padding: 0.5rem;
+    border-radius: 0.25rem;
+}
+
+.wordlist-container>span:last-child {
+    margin-right: 0;
+}
+
+.wordlist-container>span.found {
+    background-color: black;
+}
+
+.wordlist-error span {
+    font-family: monospace;
+    font-weight: 800;
+    padding: 0 0.5rem;
+}
+
+.puzzle-container {
+    display: grid;
+    margin: 1rem;
+    padding: 0.25rem;
+    user-select: none;
+    gap: 0.5rem;
+    font-size: 32px;
+    font-family: monospace;
+}
+
+.puzzle-container>.area {
+    border-radius: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: #CFDFFF;
+}
+
+.puzzle-container>.area-highlight {
+    background-color: lightpink;
+}

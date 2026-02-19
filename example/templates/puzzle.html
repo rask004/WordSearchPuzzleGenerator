@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+
+{% block title %}
+Word Search Puzzles - {{ wordlist }}
+{% endblock %}
+
+{% block headers %}
+<link rel="stylesheet" href="{{ url_for('static', filename='puzzle.css') }}" />
+<script defer src="{{ url_for('static', filename='puzzle.js') }}"></script>
+<style type="text/css"></style>
+{% endblock %}
+
+{% block content %}
+<section class="wordlist-container">
+    {% for word in puzzle_context.words %}
+    <span>{{ word|upper }}</span>
+    {% endfor %}
+</section>
+<section class="puzzle-container"
+    style='grid-template-rows: repeat({{ puzzle_context.height }}, 2rem); grid-template-columns: repeat({{ puzzle_context.width }}, 2rem);'>
+    {% for letter in puzzle_context.puzzle %}
+    <div class="area"><span>{{ letter|upper }}</span></div>
+    {% endfor %}
+</section>
+<div>
+    <p class="footer"></p>
+</div>
+{% endblock %}

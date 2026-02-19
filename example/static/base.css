@@ -1,0 +1,33 @@
+html {
+    font-family: sans-serif;
+    font-size: 16px;
+}
+
+body {
+    font-size: 1.2rem;
+    color: black;
+    background-color: #FFFFE3;
+    margin: 1rem;
+}
+
+nav {
+    padding: 1.25rem;
+    background-color: #00007F;
+    color: #FFFF50;
+    border-radius: 0.5rem;
+}
+
+nav a,
+nav a:visited {
+    margin-right: 1rem;
+    text-decoration: none;
+    color: #FFFF50;
+}
+
+nav a:last-child {
+    margin-right: 0;
+}
+
+nav a:hover {
+    color: #FFFFE0;
+}
